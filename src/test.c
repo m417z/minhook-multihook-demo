@@ -6,16 +6,6 @@
 
 void *pMessageBoxWOriginal[HOOKS_AMOUNT];
 
-struct
-{
-	MH_STATUS(WINAPI *MH_Initialize)();
-	MH_STATUS(WINAPI *MH_Uninitialize)();
-	MH_STATUS(WINAPI *MH_CreateHook)(void* pTarget, void* const pDetour, void** ppOriginal);
-	MH_STATUS(WINAPI *MH_RemoveHook)(void* pTarget);
-	MH_STATUS(WINAPI *MH_EnableHook)(void* pTarget);
-} MinHookFunctions[HOOKS_AMOUNT];
-
-BOOL LoadMinHookLibraries(void);
 LRESULT CALLBACK DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 int WINAPI MessageBoxW_Hook(int nHook, HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType);
 
@@ -44,71 +34,15 @@ int CALLBACK WinMain(
 	_In_  int nCmdShow
 	)
 {
-	if(!LoadMinHookLibraries())
+	if(MH_Initialize() != MH_OK)
 		ExitProcess(1);
-
-	for(int i = 0; i < HOOKS_AMOUNT; i++)
-		if(MinHookFunctions[i].MH_Initialize() != MH_OK)
-			ExitProcess(1);
 
 	INT_PTR ret = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MAIN), NULL, (DLGPROC)DlgProc);
 
-	for(int i = 0; i < HOOKS_AMOUNT; i++)
-		if(MinHookFunctions[i].MH_Uninitialize() != MH_OK)
-			ExitProcess(1);
+	if(MH_Uninitialize() != MH_OK)
+		ExitProcess(1);
 
 	ExitProcess((UINT)ret);
-}
-
-BOOL LoadMinHookLibraries(void)
-{
-#ifdef _WIN64
-	const WCHAR *szLibFileName = L"MinHook.x64.dll";
-#else
-	const WCHAR *szLibFileName = L"MinHook.x86.dll";
-#endif
-
-	WCHAR szCurrentPath[MAX_PATH];
-	DWORD dwCurrentPathLen = GetModuleFileName(NULL, szCurrentPath, MAX_PATH);
-	if(dwCurrentPathLen == 0)
-		return FALSE;
-
-	do
-	{
-		dwCurrentPathLen--;
-		if(dwCurrentPathLen == 0)
-			return FALSE;
-	}
-	while(szCurrentPath[dwCurrentPathLen] != L'\\');
-
-	lstrcpy(szCurrentPath + dwCurrentPathLen + 1, szLibFileName);
-
-	WCHAR szTempPath[MAX_PATH];
-	DWORD dwTempPathLen = GetTempPath(MAX_PATH, szTempPath);
-	if(dwTempPathLen == 0)
-		return FALSE;
-
-	lstrcpy(szTempPath + dwTempPathLen, szLibFileName);
-	dwTempPathLen += lstrlen(szLibFileName);
-
-	for(int i = 0; i < HOOKS_AMOUNT; i++)
-	{
-		wsprintf(szTempPath + dwTempPathLen, L"%d", i);
-
-		CopyFile(szCurrentPath, szTempPath, FALSE);
-
-		HMODULE hModule = LoadLibrary(szTempPath);
-		if(!hModule)
-			return FALSE;
-
-		*(FARPROC *)&MinHookFunctions[i].MH_Initialize = GetProcAddress(hModule, "MH_Initialize");
-		*(FARPROC *)&MinHookFunctions[i].MH_Uninitialize = GetProcAddress(hModule, "MH_Uninitialize");
-		*(FARPROC *)&MinHookFunctions[i].MH_CreateHook = GetProcAddress(hModule, "MH_CreateHook");
-		*(FARPROC *)&MinHookFunctions[i].MH_RemoveHook = GetProcAddress(hModule, "MH_RemoveHook");
-		*(FARPROC *)&MinHookFunctions[i].MH_EnableHook = GetProcAddress(hModule, "MH_EnableHook");
-	}
-
-	return TRUE;
 }
 
 LRESULT CALLBACK DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -128,12 +62,12 @@ LRESULT CALLBACK DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				int nHook = LOWORD(wParam) - IDC_CHECK1;
 				if(IsDlgButtonChecked(hWnd, LOWORD(wParam)))
 				{
-					if(MinHookFunctions[nHook].MH_CreateHook(MessageBoxW, MessageBoxW_Hooks[nHook], &pMessageBoxWOriginal[nHook]) == MH_OK)
-						MinHookFunctions[nHook].MH_EnableHook(MessageBoxW);
+					if(MH_CreateHookEx(nHook, MessageBoxW, MessageBoxW_Hooks[nHook], &pMessageBoxWOriginal[nHook]) == MH_OK)
+						MH_EnableHookEx(nHook, MessageBoxW);
 				}
 				else
 				{
-					MinHookFunctions[nHook].MH_RemoveHook(MessageBoxW);
+					MH_RemoveHookEx(nHook, MessageBoxW);
 				}
 			}
 			break;
